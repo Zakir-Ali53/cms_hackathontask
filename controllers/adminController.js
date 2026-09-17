@@ -4,15 +4,6 @@ const Complaint = require("../models/Complaint");
 
 const createFirstAdmin = async (req, res) => {
     try {
-        const adminExists = await User.findOne({ role: "ADMIN" });
-
-        if (adminExists) {
-            return res.status(400).json({
-                success: false,
-                message: "Admin already exists"
-            });
-        }
-
         const { name, email, password } = req.body;
 
         if (!name || !email || !password) {
@@ -26,6 +17,18 @@ const createFirstAdmin = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: "Password must be at least 6 characters"
+            });
+        }
+
+        const existingProtectedAdmin = await User.findOne({
+            role: "ADMIN",
+            isProtected: true
+        });
+
+        if (existingProtectedAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: "First admin already exists"
             });
         }
 
@@ -52,7 +55,7 @@ const createFirstAdmin = async (req, res) => {
         res.status(201).json({
             success: true,
             message: "First admin created successfully",
-            admin: {
+            user: {
                 id: admin._id,
                 name: admin.name,
                 email: admin.email,
@@ -64,7 +67,8 @@ const createFirstAdmin = async (req, res) => {
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "First admin creation failed"
+            message: "Failed to create first admin",
+            error: error.message
         });
     }
 };
@@ -107,11 +111,6 @@ const getUsers = async (req, res) => {
         res.status(200).json({
             success: true,
             count: users.length,
-            filters: {
-                search: search || "",
-                role: role || "",
-                status: status || ""
-            },
             users
         });
     } catch (error) {
@@ -133,10 +132,10 @@ const approveUser = async (req, res) => {
             });
         }
 
-        if (user.role === "ADMIN") {
-            return res.status(400).json({
+        if (user.isProtected) {
+            return res.status(403).json({
                 success: false,
-                message: "Admin cannot be approved"
+                message: "Protected admin cannot be modified"
             });
         }
 
@@ -146,7 +145,8 @@ const approveUser = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: "User approved successfully"
+            message: "User approved successfully",
+            user
         });
     } catch (error) {
         res.status(500).json({
@@ -167,10 +167,10 @@ const rejectUser = async (req, res) => {
             });
         }
 
-        if (user.role === "ADMIN") {
-            return res.status(400).json({
+        if (user.isProtected) {
+            return res.status(403).json({
                 success: false,
-                message: "Admin cannot be rejected"
+                message: "Protected admin cannot be modified"
             });
         }
 
@@ -180,7 +180,8 @@ const rejectUser = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: "User rejected successfully"
+            message: "User rejected successfully",
+            user
         });
     } catch (error) {
         res.status(500).json({
@@ -201,13 +202,6 @@ const activateUser = async (req, res) => {
             });
         }
 
-        if (user._id.equals(req.user._id)) {
-            return res.status(403).json({
-                success: false,
-                message: "You cannot activate yourself"
-            });
-        }
-
         if (user.isProtected) {
             return res.status(403).json({
                 success: false,
@@ -221,7 +215,8 @@ const activateUser = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: "User activated successfully"
+            message: "User activated successfully",
+            user
         });
     } catch (error) {
         res.status(500).json({
@@ -242,17 +237,10 @@ const deactivateUser = async (req, res) => {
             });
         }
 
-        if (user._id.equals(req.user._id)) {
-            return res.status(403).json({
-                success: false,
-                message: "You cannot deactivate yourself"
-            });
-        }
-
         if (user.isProtected) {
             return res.status(403).json({
                 success: false,
-                message: "Protected admin cannot be deactivated"
+                message: "Protected admin cannot be modified"
             });
         }
 
@@ -262,7 +250,8 @@ const deactivateUser = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: "User deactivated successfully"
+            message: "User deactivated successfully",
+            user
         });
     } catch (error) {
         res.status(500).json({
@@ -283,13 +272,6 @@ const deleteUser = async (req, res) => {
             });
         }
 
-        if (user._id.equals(req.user._id)) {
-            return res.status(403).json({
-                success: false,
-                message: "You cannot delete yourself"
-            });
-        }
-
         if (user.isProtected) {
             return res.status(403).json({
                 success: false,
@@ -297,7 +279,11 @@ const deleteUser = async (req, res) => {
             });
         }
 
-        await user.deleteOne();
+        await Complaint.deleteMany({
+            user: user._id
+        });
+
+        await User.findByIdAndDelete(user._id);
 
         res.status(200).json({
             success: true,
@@ -322,17 +308,10 @@ const makeAdmin = async (req, res) => {
             });
         }
 
-        if (user._id.equals(req.user._id)) {
-            return res.status(400).json({
+        if (user.isProtected) {
+            return res.status(403).json({
                 success: false,
-                message: "You are already an admin"
-            });
-        }
-
-        if (user.role === "ADMIN") {
-            return res.status(400).json({
-                success: false,
-                message: "User is already an admin"
+                message: "User is already protected"
             });
         }
 
@@ -344,12 +323,13 @@ const makeAdmin = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: "User is now an admin"
+            message: "User is now an admin",
+            user
         });
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "Failed to make user admin"
+            message: "Failed to make admin"
         });
     }
 };
@@ -362,13 +342,6 @@ const removeAdmin = async (req, res) => {
             return res.status(404).json({
                 success: false,
                 message: "User not found"
-            });
-        }
-
-        if (user._id.equals(req.user._id)) {
-            return res.status(403).json({
-                success: false,
-                message: "You cannot remove your own admin role"
             });
         }
 
@@ -392,84 +365,44 @@ const removeAdmin = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: "Admin role removed successfully"
+            message: "Admin role removed successfully",
+            user
         });
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "Failed to remove admin role"
+            message: "Failed to remove admin"
         });
     }
 };
 
 const getDashboardStats = async (req, res) => {
     try {
-        const totalUsers = await User.countDocuments({
-            role: "USER"
-        });
-
-        const pendingUsers = await User.countDocuments({
-            role: "USER",
-            status: "PENDING"
-        });
-
-        const activeUsers = await User.countDocuments({
-            role: "USER",
-            status: "ACTIVE"
-        });
-
-        const deactivatedUsers = await User.countDocuments({
-            role: "USER",
-            status: "DEACTIVATED"
-        });
-
-        const rejectedUsers = await User.countDocuments({
-            role: "USER",
-            status: "REJECTED"
-        });
-
-        const totalAdmins = await User.countDocuments({
-            role: "ADMIN"
-        });
-
-        const totalComplaints = await Complaint.countDocuments();
-
-        const pendingComplaints = await Complaint.countDocuments({
-            status: "PENDING"
-        });
-
-        const inProgressComplaints = await Complaint.countDocuments({
-            status: "IN PROGRESS"
-        });
-
-        const resolvedComplaints = await Complaint.countDocuments({
-            status: "RESOLVED"
-        });
-
-        const rejectedComplaints = await Complaint.countDocuments({
-            status: "REJECTED"
-        });
+        const [
+            totalUsers,
+            pendingUsers,
+            activeUsers,
+            totalComplaints,
+            pendingComplaints,
+            resolvedComplaints
+        ] = await Promise.all([
+            User.countDocuments(),
+            User.countDocuments({ status: "PENDING" }),
+            User.countDocuments({ status: "ACTIVE" }),
+            Complaint.countDocuments(),
+            Complaint.countDocuments({ status: "PENDING" }),
+            Complaint.countDocuments({ status: "RESOLVED" })
+        ]);
 
         res.status(200).json({
             success: true,
             stats: {
-                users: {
-                    total: totalUsers,
-                    pending: pendingUsers,
-                    active: activeUsers,
-                    deactivated: deactivatedUsers,
-                    rejected: rejectedUsers
-                },
-                admins: {
-                    total: totalAdmins
-                },
-                complaints: {
-                    total: totalComplaints,
-                    pending: pendingComplaints,
-                    inProgress: inProgressComplaints,
-                    resolved: resolvedComplaints,
-                    rejected: rejectedComplaints
-                }
+                totalUsers,
+                pendingUsers,
+                activeUsers,
+                totalComplaints,
+                pendingComplaints,
+                resolvedComplaints
             }
         });
     } catch (error) {

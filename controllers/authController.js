@@ -54,7 +54,8 @@ const register = async (req, res) => {
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "Registration failed"
+            message: "Registration failed",
+            error: error.message
         });
     }
 };
@@ -125,7 +126,8 @@ const login = async (req, res) => {
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: "Login failed"
+            message: "Login failed",
+            error: error.message
         });
     }
 };
